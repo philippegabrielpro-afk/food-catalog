@@ -1,8 +1,7 @@
-﻿name: CI
+name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -12,7 +11,29 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: food_catalog
+          POSTGRES_USER: food_catalog
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U food_catalog -d food_catalog"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      FOOD_CATALOG_ENVIRONMENT: test
+      FOOD_CATALOG_DATABASE_URL: postgresql+psycopg://food_catalog:ci-only-password@127.0.0.1:5432/food_catalog
+      FOOD_CATALOG_API_KEY: ci-consumer-key
+      FOOD_CATALOG_ADMIN_API_KEY: ci-admin-key
+      FOOD_CATALOG_AUTO_IMPORT_CIQUAL: "false"
 
     steps:
       - name: Checkout
@@ -28,10 +49,40 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Validate database migration
-        env:
-          FOOD_CATALOG_DATABASE_URL: sqlite:///./ci-test.db
+      - name: Apply PostgreSQL migration
         run: python -m alembic upgrade head
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Import and verify complete Ciqual catalog
+        run: |
+          python - <<'PY'
+          from sqlalchemy import func, select
+
+          from app.database import SessionLocal
+          from app.importer import import_ciqual
+          from app.models import Food, NutritionReference, SourceImport
+
+          with SessionLocal() as db:
+              first = import_ciqual(db)
+              second = import_ciqual(db)
+
+              food_count = db.scalar(select(func.count()).select_from(Food))
+              reference_count = db.scalar(
+                  select(func.count()).select_from(NutritionReference)
+              )
+              import_count = db.scalar(
+                  select(func.count()).select_from(SourceImport)
+              )
+
+              assert first["rows"] == 3484
+              assert second["duplicate"] is True
+              assert food_count == 3484
+              assert reference_count == 3484
+              assert import_count == 1
+
+              print(f"foods={food_count}")
+              print(f"references={reference_count}")
+              print(f"imports={import_count}")
+          PY
