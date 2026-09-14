@@ -1,12 +1,19 @@
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import require_admin_key, require_api_key
-from .catalog import create_food, get_food, list_search, serialize_food, update_food
+from .catalog import (
+    create_food,
+    get_food,
+    get_food_by_reference,
+    list_search,
+    serialize_food,
+    update_food,
+)
 from .config import get_settings
 from .database import SessionLocal, get_db
 from .importer import ImportVersionConflict, import_ciqual
@@ -66,6 +73,26 @@ def search_foods(
 )
 def food_detail(food_id: UUID, db: Session = Depends(get_db)):
     return serialize_food(get_food(db, food_id))
+
+
+@app.get(
+    "/v1/references/{source}/{external_code}",
+    response_model=FoodOut,
+    dependencies=[Depends(require_api_key)],
+    tags=["catalog"],
+)
+def reference_detail(
+    source: str = Path(min_length=2, max_length=80),
+    external_code: str = Path(min_length=1, max_length=80),
+    source_version: str | None = Query(default=None, max_length=80),
+    db: Session = Depends(get_db),
+):
+    return get_food_by_reference(
+        db,
+        source,
+        external_code,
+        source_version,
+    )
 
 
 @app.post(

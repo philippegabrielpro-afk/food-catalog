@@ -37,6 +37,7 @@ def test_api_auth_manual_catalog_and_no_health_payload():
                 "tags": ["cuit", "fÃ©culent"],
                 "carbs_per_100g": 30.5,
                 "source": "manual",
+                "external_code": "family-rice",
                 "source_version": "1",
             },
         )
@@ -53,6 +54,7 @@ def test_api_auth_manual_catalog_and_no_health_payload():
                 "tags": ["cuit", "fÃ©culent"],
                 "carbs_per_100g": 31.0,
                 "source": "manual",
+                "external_code": "family-rice",
                 "source_version": "1",
             },
         )
@@ -67,10 +69,33 @@ def test_api_auth_manual_catalog_and_no_health_payload():
                 "tags": ["cuit", "fÃ©culent"],
                 "carbs_per_100g": 31.0,
                 "source": "manual",
+                "external_code": "family-rice",
                 "source_version": "2",
             },
         )
         assert changed_new_version.status_code == 200
+
+        latest_reference = client.get(
+            "/v1/references/manual/family-rice",
+            headers={"X-API-Key": settings.api_key},
+        )
+        assert latest_reference.status_code == 200
+        assert latest_reference.json()["reference"]["source_version"] == "2"
+        assert latest_reference.json()["reference"]["carbs_per_100g"] == 31.0
+
+        historical_reference = client.get(
+            "/v1/references/manual/family-rice",
+            params={"source_version": "1"},
+            headers={"X-API-Key": settings.api_key},
+        )
+        assert historical_reference.status_code == 200
+        assert historical_reference.json()["reference"]["carbs_per_100g"] == 30.5
+
+        missing_reference = client.get(
+            "/v1/references/manual/unknown",
+            headers={"X-API-Key": settings.api_key},
+        )
+        assert missing_reference.status_code == 404
 
         search = client.get(
             "/v1/foods/search",

@@ -13,6 +13,8 @@ Consumer endpoints require `X-API-Key`:
 
 - `GET /v1/foods/search?q=riz%20basmati&limit=8`
 - `GET /v1/foods/{food_id}`
+- `GET /v1/references/{source}/{external_code}`
+- `GET /v1/references/{source}/{external_code}?source_version={version}`
 
 Administration endpoints require the distinct admin key:
 

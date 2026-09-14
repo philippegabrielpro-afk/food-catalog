@@ -25,8 +25,12 @@ def preferred_reference(food: Food) -> NutritionReference | None:
     return max(candidates, key=lambda reference: reference.created_at) if candidates else None
 
 
-def serialize_food(food: Food, match_score: float | None = None) -> dict:
-    reference = preferred_reference(food)
+def serialize_food(
+    food: Food,
+    match_score: float | None = None,
+    reference_override: NutritionReference | None = None,
+) -> dict:
+    reference = reference_override or preferred_reference(food)
     reference_payload = None
     if reference:
         reference_payload = {
@@ -101,6 +105,47 @@ def get_food(db: Session, food_id: UUID) -> Food:
     if not food:
         raise HTTPException(status_code=404, detail="Food not found")
     return food
+
+
+def get_food_by_reference(
+    db: Session,
+    source: str,
+    external_code: str,
+    source_version: str | None = None,
+) -> dict:
+    statement = (
+        select(Food, NutritionReference)
+        .join(
+            NutritionReference,
+            NutritionReference.food_id == Food.id,
+        )
+        .where(
+            Food.active.is_(True),
+            NutritionReference.source == source,
+            NutritionReference.external_code == external_code,
+        )
+        .options(
+            selectinload(Food.aliases),
+            selectinload(Food.tags),
+            selectinload(Food.references),
+        )
+    )
+
+    if source_version is not None:
+        statement = statement.where(
+            NutritionReference.source_version == source_version
+        )
+    else:
+        statement = statement.order_by(
+            NutritionReference.created_at.desc()
+        )
+
+    row = db.execute(statement).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Reference not found")
+
+    food, reference = row
+    return serialize_food(food, reference_override=reference)
 
 
 def _replace_labels(food: Food, aliases: list[str], tags: list[str]) -> None:
