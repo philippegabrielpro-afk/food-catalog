@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: food_catalog
+      POSTGRES_USER: food_catalog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - catalog_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U food_catalog -d food_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [private]
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FOOD_CATALOG_ENVIRONMENT: production
+      FOOD_CATALOG_DATABASE_URL: postgresql+psycopg://food_catalog:${POSTGRES_PASSWORD}@db:5432/food_catalog
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [private]
+
+networks:
+  private:
+    internal: true
+
+volumes:
+  catalog_postgres_data:

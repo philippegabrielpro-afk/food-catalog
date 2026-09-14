@@ -1,0 +1,102 @@
+from contextlib import asynccontextmanager
+from uuid import UUID
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from .auth import require_admin_key, require_api_key
+from .catalog import create_food, get_food, list_search, serialize_food, update_food
+from .config import get_settings
+from .database import SessionLocal, get_db
+from .importer import ImportVersionConflict, import_ciqual
+from .models import Food
+from .schemas import FoodOut, FoodWrite, ImportResult
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if get_settings().auto_import_ciqual:
+        with SessionLocal() as db:
+            import_ciqual(db)
+    yield
+
+
+app = FastAPI(
+    title="Food Catalog API",
+    version="0.1.0",
+    description=(
+        "Generic food composition and search service. "
+        "Do not send patient identifiers, meals, glucose data or medical context."
+    ),
+    lifespan=lifespan,
+)
+
+
+@app.get("/health", tags=["operations"])
+def health():
+    return {"status": "ok", "version": app.version}
+
+
+@app.get("/ready", tags=["operations"])
+def readiness(db: Session = Depends(get_db)):
+    food_count = db.scalar(select(func.count()).select_from(Food)) or 0
+    return {"status": "ready", "foods": food_count}
+
+
+@app.get(
+    "/v1/foods/search",
+    response_model=list[FoodOut],
+    dependencies=[Depends(require_api_key)],
+    tags=["catalog"],
+)
+def search_foods(
+    q: str = Query(min_length=2, max_length=300),
+    limit: int = Query(default=8, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    return list_search(db, q, limit)
+
+
+@app.get(
+    "/v1/foods/{food_id}",
+    response_model=FoodOut,
+    dependencies=[Depends(require_api_key)],
+    tags=["catalog"],
+)
+def food_detail(food_id: UUID, db: Session = Depends(get_db)):
+    return serialize_food(get_food(db, food_id))
+
+
+@app.post(
+    "/v1/admin/foods",
+    response_model=FoodOut,
+    status_code=201,
+    dependencies=[Depends(require_admin_key)],
+    tags=["administration"],
+)
+def admin_create_food(payload: FoodWrite, db: Session = Depends(get_db)):
+    return create_food(db, payload)
+
+
+@app.put(
+    "/v1/admin/foods/{food_id}",
+    response_model=FoodOut,
+    dependencies=[Depends(require_admin_key)],
+    tags=["administration"],
+)
+def admin_update_food(food_id: UUID, payload: FoodWrite, db: Session = Depends(get_db)):
+    return update_food(db, food_id, payload)
+
+
+@app.post(
+    "/v1/admin/imports/ciqual",
+    response_model=ImportResult,
+    dependencies=[Depends(require_admin_key)],
+    tags=["administration"],
+)
+def admin_import_ciqual(db: Session = Depends(get_db)):
+    try:
+        return import_ciqual(db)
+    except ImportVersionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
