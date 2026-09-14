@@ -31,7 +31,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Food Catalog API",
-    version="0.1.0",
+    version="0.1.1",
     description=(
         "Generic food composition and search service. "
         "Do not send patient identifiers, meals, glucose data or medical context."
