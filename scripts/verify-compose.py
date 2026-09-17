@@ -80,7 +80,7 @@ def main() -> None:
             assert len(bindings) == 1, "CI must use exactly one dynamic loopback port"
             binding = bindings[0]
             assert int(binding["HostPort"]) > 0
-            for endpoint, expected in (("health", {"status": "ok", "version": "0.2.0"}),
+            for endpoint, expected in (("health", {"status": "ok", "version": "0.2.1"}),
                                        ("ready", {"status": "ready", "foods": 3484})):
                 with urlopen(f'http://127.0.0.1:{binding["HostPort"]}/{endpoint}', timeout=10) as response:
                     assert json.load(response) == expected

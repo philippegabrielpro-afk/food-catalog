@@ -1,6 +1,6 @@
 # Food Catalog API
 
-Version 0.2.0 adds a single-admin browser interface at `/admin`.
+Version 0.2.1 includes the administration interface, corrected Docker networking and daily PostgreSQL backups.
 
 Standalone generic food-reference service extracted from Diablotin. It provides
 food search, autocomplete metadata and versioned nutritional provenance.

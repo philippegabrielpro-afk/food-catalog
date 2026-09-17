@@ -24,7 +24,7 @@ def test_api_auth_manual_catalog_and_no_health_payload():
     main_module.app.dependency_overrides[get_db] = override_get_db
     client = TestClient(main_module.app)
     try:
-        assert client.get("/health").json() == {"status": "ok", "version": "0.2.0"}
+        assert client.get("/health").json() == {"status": "ok", "version": "0.2.1"}
         assert client.get("/ready").json() == {"status": "ready", "foods": 0}
         assert client.get("/v1/foods/search", params={"q": "riz"}).status_code == 401
 
