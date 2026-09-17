@@ -89,7 +89,7 @@ though `.env.example` remains convenient for local SQLite development.
 ## Docker
 
 Create `.env` from `.env.example`, replace all three example secrets (including
-`POSTGRES_PASSWORD`), then run:
+`POSTGRES_PASSWORD`), prepare the backup directory as described below, then run:
 
 ```bash
 docker compose up -d --build
@@ -101,6 +101,65 @@ Generate each one independently, for example with
 
 The API binds only to `127.0.0.1:8080`; expose it through a separately configured
 TLS reverse proxy. PostgreSQL is on an internal Docker network.
+
+The API also joins a separate `access` bridge for its host port publication.
+The database and backup service join only `private` (`internal: true`). Do not
+remove database isolation or publish port 5432 to work around a networking issue.
+See the [Docker Compose networking documentation](https://docs.docker.com/compose/how-tos/networking/).
+
+## Daily PostgreSQL backups
+
+The `backup` service creates a backup immediately after the API/database are
+healthy, then waits 86,400 seconds between completed runs. This is a daily
+interval, not a fixed wall-clock schedule; restarting it starts a new backup.
+It does not delete old completed dumps. A snapshot is published only after
+`pg_dump` succeeds, the file is nonempty and `pg_restore --list` can read it.
+The custom-format temporary file is renamed on the same filesystem, avoiding
+an incomplete final `.dump`. Files are mode `600`; credentials are not passed
+on command lines or intentionally printed. Failed temporary dumps are cleaned
+up, existing archives and the previous success marker are left intact.
+
+Create the host backup directory **before** starting Compose. Default settings
+target `/home/ubuntu/food-catalog-backups` and the Ubuntu UID/GID `1000:1000`:
+
+```bash
+mkdir -p /home/ubuntu/food-catalog-backups
+chmod 700 /home/ubuntu/food-catalog-backups
+```
+
+It must be owned by the configured backup UID/GID. Other installations can set
+`FOOD_CATALOG_BACKUP_DIR`, `FOOD_CATALOG_BACKUP_UID` and
+`FOOD_CATALOG_BACKUP_GID` in `.env`. Compose deliberately does not create a
+missing bind directory automatically, to avoid an unexpectedly root-owned path.
+The service uses a read-only root filesystem, only the backup directory is
+writable, and it receives no API keys. Docker health becomes unhealthy if no
+success was recorded in the last 26 hours. This is a status check, not an email
+alert. Logs are size-limited; monitor health and available disk space.
+
+Manual one-off backup, while the database is already running:
+
+```bash
+docker compose -p food-catalog --env-file .env run --rm --no-deps backup --once
+```
+
+These backups contain **only PostgreSQL catalog data**, not `.env`, deployment
+keys or host configuration. Same-VPS storage is not off-site protection; plan
+a separate encrypted copy and a documented, tested recovery procedure. Archive
+listing is not a restoration test. See [OPERATIONS.md](OPERATIONS.md).
+
+## Infrastructure checks
+
+Python tests now include shell success/failure checks and portable Compose
+configuration checks. Shell tests are skipped on Windows and must pass on Linux
+in CI. `sh -n scripts/backup.sh` and `sh -n scripts/backup-healthcheck.sh` check
+syntax on Linux. The new CI-only `scripts/verify-compose.py` uses a fresh,
+randomly named project and dummy secrets in a sanitized temporary source copy.
+It checks real loopback port publication, startup/data readiness, successful
+backups, invalid-password failure protection, and restores one archive into
+a **separate disposable database**. It checks 3,484 foods/references, one import
+and the code 9125 value. Only that generated CI project's volumes are removed.
+It never runs against the VPS or an existing catalog volume. Its dynamic-port
+override requires Docker Compose 2.24.4+ (`!override`).
 
 ## Example
 

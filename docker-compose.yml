@@ -32,11 +32,64 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    networks: [private, access]
+
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    user: "${FOOD_CATALOG_BACKUP_UID:-1000}:${FOOD_CATALOG_BACKUP_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: food_catalog
+      POSTGRES_USER: food_catalog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      CATALOG_BACKUP_INTERVAL_SECONDS: "86400"
+    entrypoint: ["/bin/sh", "/usr/local/bin/catalog-backup.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${FOOD_CATALOG_BACKUP_DIR:-/home/ubuntu/food-catalog-backups}
+        target: /backups
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./scripts/backup.sh
+        target: /usr/local/bin/catalog-backup.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./scripts/backup-healthcheck.sh
+        target: /usr/local/bin/catalog-backup-healthcheck.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/usr/local/bin/catalog-backup-healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
     networks: [private]
 
 networks:
   private:
     internal: true
+  access:
+    driver: bridge
+    internal: false
 
 volumes:
   catalog_postgres_data:

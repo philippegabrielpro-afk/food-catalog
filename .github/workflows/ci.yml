@@ -11,7 +11,7 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -86,3 +86,6 @@ jobs:
               print(f"references={reference_count}")
               print(f"imports={import_count}")
           PY
+
+      - name: Verify Docker host access, backups and isolated restoration
+        run: python scripts/verify-compose.py
