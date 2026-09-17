@@ -29,7 +29,7 @@ def _add_tag(food: Food, value: str | None) -> None:
         food.tags.append(FoodTag(value=cleaned))
 
 
-def import_ciqual(db: Session, path: Path = CIQUAL_DATA_FILE) -> dict:
+def import_ciqual(db: Session, path: Path = CIQUAL_DATA_FILE, *, commit: bool = True) -> dict:
     content = path.read_bytes()
     file_sha256 = hashlib.sha256(content).hexdigest()
     previous = db.scalar(
@@ -133,7 +133,10 @@ def import_ciqual(db: Session, path: Path = CIQUAL_DATA_FILE) -> dict:
             )
         batch.row_count = len(rows)
         batch.status = "processed"
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except Exception:
         db.rollback()
         raise

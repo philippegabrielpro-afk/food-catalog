@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Food Catalog · Administration</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+  <script src="/admin/assets/admin.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true">F</span><span>Food Catalog<small>Le référentiel, simplement.</small></span></a>
+    <div class="header-right"><span class="pill">Administration · v0.2.0</span><button id="logout" class="quiet hidden" type="button">Déconnexion</button></div>
+  </header>
+  <main>
+    <section id="login-panel" class="login-card">
+      <span class="eyebrow">Votre espace de travail</span>
+      <h1>Des aliments bien référencés.</h1>
+      <p>Recherchez, enrichissez et versionnez votre catalogue. Les références d’origine restent consultables.</p>
+      <form id="login-form">
+        <label for="admin-key">Clé d’administration</label>
+        <input id="admin-key" type="password" autocomplete="off" spellcheck="false" required placeholder="Votre clé FOOD_CATALOG_ADMIN_API_KEY">
+        <button class="primary" type="submit">Ouvrir le catalogue</button>
+      </form>
+      <p class="hint">La clé reste uniquement en mémoire pendant cette session. Utilisez HTTPS, ou l’adresse locale 127.0.0.1. Ne partagez pas votre clé.</p>
+    </section>
+    <div id="workspace" class="hidden">
+      <div class="intro"><div><span class="eyebrow">Référentiel alimentaire</span><h1>Le catalogue</h1><p>Une source claire pour chaque valeur. Un historique pour chaque changement.</p></div><button id="new-food" class="primary" type="button">+ Nouvel aliment</button></div>
+      <nav class="tabs" aria-label="Sections"><button class="tab active" data-tab="catalog" type="button">Aliments</button><button class="tab" data-tab="imports" type="button">Imports Ciqual</button><button class="tab" data-tab="audit" type="button">Journal des modifications</button></nav>
+      <section id="catalog-view" class="view catalog-layout">
+        <aside class="panel browse-panel" aria-label="Recherche d’aliments">
+          <form id="search-form"><label for="search">Nom, synonyme ou tag</label><div class="search-line"><input id="search" type="search" maxlength="300" placeholder="Riz basmati, compote…"><button type="submit" class="secondary">Chercher</button></div></form>
+          <div class="list-meta"><span id="food-count">Chargement…</span><button id="refresh-foods" type="button" class="quiet">Actualiser</button></div>
+          <div id="food-list" class="food-list" aria-live="polite"></div>
+          <div class="pagination"><button id="previous" class="secondary" type="button">← Précédent</button><span id="page-label"></span><button id="next" class="secondary" type="button">Suivant →</button></div>
+        </aside>
+        <section id="editor" class="panel editor-panel" aria-label="Fiche aliment"><div class="empty-editor"><span class="eyebrow">Chaque détail compte</span><h2>Choisissez un aliment</h2><p>Consultez ses références ou enrichissez ses synonymes et ses tags.</p></div></section>
+      </section>
+      <section id="imports-view" class="view panel hidden"><div class="section-heading"><div><h2>Imports Ciqual</h2><p>Recharge le fichier officiel fourni avec cette version du service. Un fichier déjà importé ne crée pas de doublons.</p></div><button id="import-ciqual" class="primary" type="button">Lancer l’import fourni</button></div><p class="hint">Pas de téléchargement automatique de nouvelles éditions ni de dépôt de fichier libre. Seuls les imports terminés sont conservés ; une erreur est signalée à l’écran.</p><div id="import-result" aria-live="polite"></div><div id="import-list" class="table-wrap"></div></section>
+      <section id="audit-view" class="view panel hidden"><div class="section-heading"><div><h2>Journal des modifications</h2><p>Les 50 dernières actions depuis l’installation de l’interface.</p></div><button id="refresh-audit" class="secondary" type="button">Actualiser</button></div><p class="hint">Administration à clé partagée : les actions ne sont pas attribuées à une personne. Ce journal n’est pas une preuve inviolable.</p><div id="audit-list"></div></section>
+    </div>
+    <div id="notice" class="notice hidden" role="status" aria-live="polite"></div>
+  </main>
+  <footer>Référentiel générique uniquement · Aucune donnée de patient ni de repas.<br>Ciqual 2025 · Anses · Licence Ouverte 2.0 (Etalab)</footer>
+</body>
+</html>

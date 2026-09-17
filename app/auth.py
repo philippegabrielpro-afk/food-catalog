@@ -6,7 +6,7 @@ from .config import get_settings
 
 
 def _check_key(provided: str | None, expected: str) -> None:
-    if not provided or not compare_digest(provided, expected):
+    if not provided or not compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 

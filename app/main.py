@@ -1,16 +1,21 @@
 from contextlib import asynccontextmanager
+from pathlib import Path as FilePath
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import require_admin_key, require_api_key
+from .admin import router as admin_router
 from .catalog import (
     create_food,
     get_food,
     get_food_by_reference,
     list_search,
+    record_audit,
     serialize_food,
     update_food,
 )
@@ -31,13 +36,43 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Food Catalog API",
-    version="0.1.1",
+    version="0.2.0",
     description=(
         "Generic food composition and search service. "
         "Do not send patient identifiers, meals, glucose data or medical context."
     ),
     lifespan=lifespan,
 )
+
+app.include_router(admin_router)
+ADMIN_STATIC = FilePath(__file__).parent / "static" / "admin"
+app.mount("/admin/assets", StaticFiles(directory=ADMIN_STATIC), name="admin-assets")
+
+
+@app.middleware("http")
+async def admin_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/admin" or request.url.path.startswith(("/admin/", "/v1/admin/")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; script-src 'self'; style-src 'self'; "
+            "connect-src 'self'; img-src 'self'; base-uri 'none'; "
+            "frame-ancestors 'none'; form-action 'none'"
+        )
+    return response
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    return FileResponse(ADMIN_STATIC / "index.html")
+
+
+@app.get("/admin/", include_in_schema=False)
+def admin_redirect():
+    return RedirectResponse("/admin")
 
 
 @app.get("/health", tags=["operations"])
@@ -124,6 +159,9 @@ def admin_update_food(food_id: UUID, payload: FoodWrite, db: Session = Depends(g
 )
 def admin_import_ciqual(db: Session = Depends(get_db)):
     try:
-        return import_ciqual(db)
+        result = import_ciqual(db, commit=False)
+        record_audit(db, "ciqual_import_requested", result)
+        db.commit()
+        return result
     except ImportVersionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
