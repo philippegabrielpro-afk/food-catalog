@@ -1,16 +1,35 @@
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+from datetime import timezone
 from difflib import SequenceMatcher
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from .models import Food, FoodAlias, FoodTag, NutritionReference
-from .schemas import FoodWrite
+from .models import AdminAudit, Food, FoodAlias, FoodTag, NutritionReference
+from .schemas import FoodWrite, ReferenceWrite
+
+
+def record_audit(db: Session, action: str, after: dict, food_id=None, before=None) -> None:
+    db.add(AdminAudit(
+        food_id=food_id, action=action,
+        before=json.loads(json.dumps(before, default=str)) if before is not None else None,
+        after=json.loads(json.dumps(after, default=str)),
+    ))
+
+
+def commit_change(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Reference identity or labels already exist") from exc
 
 
 def normalize_text(value: str) -> str:
@@ -22,7 +41,15 @@ def normalize_text(value: str) -> str:
 def preferred_reference(food: Food) -> NutritionReference | None:
     preferred = [reference for reference in food.references if reference.preferred]
     candidates = preferred or list(food.references)
-    return max(candidates, key=lambda reference: reference.created_at) if candidates else None
+    return max(candidates, key=lambda reference: utc_timestamp(reference.created_at)) if candidates else None
+
+
+def utc_timestamp(value) -> float:
+    # SQLite drops timezone offsets, whereas fresh ORM values remain aware
+    # when SessionLocal(expire_on_commit=False) is used. Interpret both as UTC.
+    if value is None:
+        return 0.0
+    return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).timestamp()
 
 
 def serialize_food(
@@ -187,7 +214,9 @@ def _replace_labels(food: Food, aliases: list[str], tags: list[str]) -> None:
     ]
 
 
-def _set_reference(food: Food, payload: FoodWrite) -> None:
+def _set_reference(food: Food, payload: ReferenceWrite) -> None:
+    if normalize_text(payload.source) == "ciqual":
+        raise HTTPException(status_code=422, detail="Ciqual is reserved for official imports; use a manual source")
     external_code = payload.external_code or f"manual:{food.id}"
     raw_value = payload.raw_value or ("" if payload.carbs_per_100g is None else str(payload.carbs_per_100g))
     existing = next(
@@ -252,17 +281,20 @@ def create_food(db: Session, payload: FoodWrite) -> dict:
     db.flush()
     _replace_labels(food, payload.aliases, payload.tags)
     _set_reference(food, payload)
-    db.commit()
+    record_audit(db, "food_created", serialize_food(food), food.id)
+    commit_change(db)
     return serialize_food(get_food(db, food.id))
 
 
 def update_food(db: Session, food_id: UUID, payload: FoodWrite) -> dict:
     food = get_food(db, food_id)
+    before = serialize_food(food)
     food.canonical_name = payload.canonical_name
     food.normalized_name = normalize_text(payload.canonical_name)
     food.group_name = payload.group_name
     food.subgroup_name = payload.subgroup_name
     _replace_labels(food, payload.aliases, payload.tags)
     _set_reference(food, payload)
-    db.commit()
+    record_audit(db, "food_updated", serialize_food(food), food.id, before)
+    commit_change(db)
     return serialize_food(get_food(db, food.id))
