@@ -1,8 +1,8 @@
 "use strict";
-// This pilot uses a shared admin key, in memory only. No browser persistence.
+// Browser authentication uses an HttpOnly cookie and an in-memory CSRF token.
 (() => {
   const $ = (selector) => document.querySelector(selector);
-  const state = {key: "", epoch: 0, query: "", offset: 0, total: 0, limit: 30, food: null, dirty: false, searchVersion: 0, detailVersion: 0};
+  const state = {csrf: "", username: "", epoch: 0, query: "", offset: 0, total: 0, limit: 30, food: null, dirty: false, searchVersion: 0, detailVersion: 0};
   let noticeTimer;
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
   const date = (value) => new Date(value).toLocaleString("fr-FR");
@@ -23,19 +23,24 @@
   function leaveEditor() {
     return !state.dirty || window.confirm("Vous avez des changements non enregistrés. Les abandonner ?");
   }
-  function logout() {
-    state.key = ""; state.epoch++; state.searchVersion++; state.detailVersion++; state.food = null; state.dirty = false;
-    $("#admin-key").value = "";
+  function showLogin() {
+    state.csrf = ""; state.username = ""; state.epoch++; state.searchVersion++; state.detailVersion++; state.food = null; state.dirty = false;
+    $("#admin-password").value = "";
     $("#workspace").classList.add("hidden"); $("#logout").classList.add("hidden");
     $("#login-panel").classList.remove("hidden");
     ["#food-list", "#editor", "#import-list", "#audit-list", "#import-result"].forEach((selector) => $(selector).replaceChildren());
-    $("#admin-key").focus();
+    $("#admin-username").focus();
+  }
+  async function logout() {
+    const csrf = state.csrf;
+    showLogin();
+    if (csrf) await fetch("/v1/admin/session", {method: "DELETE", credentials: "same-origin", cache: "no-store", headers: {"X-CSRF-Token": csrf}});
   }
   async function api(path, options = {}) {
     const epoch = state.epoch;
-    const response = await fetch(`/v1/admin${path}`, {...options, credentials: "omit", cache: "no-store", headers: {"X-API-Key": state.key, "Content-Type": "application/json"}});
+    const response = await fetch(`/v1/admin${path}`, {...options, credentials: "same-origin", cache: "no-store", headers: {"X-CSRF-Token": state.csrf, "Content-Type": "application/json"}});
     if (epoch !== state.epoch) throw new DOMException("Session terminée", "AbortError");
-    if (response.status === 401) { logout(); throw new Error("Clé invalide ou session expirée. Reconnectez-vous."); }
+    if (response.status === 401) { showLogin(); throw new Error("Session expirée. Reconnectez-vous."); }
     const data = await response.json();
     if (epoch !== state.epoch) throw new DOMException("Session terminée", "AbortError");
     if (!response.ok) {
@@ -140,7 +145,7 @@
   }
   const actionNames = {food_created: "Aliment créé", food_updated: "Fiche et référence mises à jour", metadata_updated: "Libellés modifiés", reference_added: "Nouvelle référence ajoutée", preferred_reference_changed: "Référence par défaut changée", ciqual_import_requested: "Import Ciqual demandé"};
   function renderAudit(container, entries) {
-    container.innerHTML = entries.length ? entries.map((item) => `<article class="audit-entry"><strong>${escape(actionNames[item.action] || item.action)}</strong><p>${escape(item.after.canonical_name || item.after.source || "Catalogue")} · ${escape(date(item.created_at))} · Clé d’administration partagée</p><details><summary>Voir les données avant / après</summary><pre>${escape(JSON.stringify({avant: item.before, apres: item.after}, null, 2))}</pre></details></article>`).join("") : '<p class="empty">Aucune action enregistrée.</p>';
+    container.innerHTML = entries.length ? entries.map((item) => `<article class="audit-entry"><strong>${escape(actionNames[item.action] || item.action)}</strong><p>${escape(item.after.canonical_name || item.after.source || "Catalogue")} · ${escape(date(item.created_at))} · Administration Food Catalog</p><details><summary>Voir les données avant / après</summary><pre>${escape(JSON.stringify({avant: item.before, apres: item.after}, null, 2))}</pre></details></article>`).join("") : '<p class="empty">Aucune action enregistrée.</p>';
   }
   async function tab(name) {
     if (name !== "catalog" && !leaveEditor()) return;
@@ -150,19 +155,27 @@
     if (name === "imports") await loadImports();
     if (name === "audit") renderAudit($("#audit-list"), await api("/audit"));
   }
+  async function openWorkspace(session) {
+    state.csrf = session.csrf_token; state.username = session.username; state.epoch++;
+    state.query = ""; state.offset = 0; $("#search").value = "";
+    await loadFoods();
+    $("#login-panel").classList.add("hidden"); $("#workspace").classList.remove("hidden"); $("#logout").classList.remove("hidden");
+    $("#editor").innerHTML = '<div class="empty-editor"><span class="eyebrow">Chaque détail compte</span><h2>Choisissez un aliment</h2><p>Consultez ses références ou enrichissez ses synonymes et ses tags.</p></div>';
+    await tab("catalog");
+  }
   $("#login-form").addEventListener("submit", (event) => {
     event.preventDefault();
     busy(event.target.querySelector("button"), async () => {
-      if (location.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname)) throw new Error("Connexion bloquée : utilisez HTTPS pour transmettre la clé.");
-      state.key = $("#admin-key").value.trim(); $("#admin-key").value = ""; state.epoch++;
-      try { state.query = ""; state.offset = 0; $("#search").value = ""; await loadFoods(); }
-      catch (error) { logout(); throw error; }
-      $("#login-panel").classList.add("hidden"); $("#workspace").classList.remove("hidden"); $("#logout").classList.remove("hidden");
-      $("#editor").innerHTML = '<div class="empty-editor"><span class="eyebrow">Chaque détail compte</span><h2>Choisissez un aliment</h2><p>Consultez ses références ou enrichissez ses synonymes et ses tags.</p></div>';
-      await tab("catalog");
+      if (location.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname)) throw new Error("Connexion bloquée : utilisez HTTPS.");
+      const credentials = {username: $("#admin-username").value.trim(), password: $("#admin-password").value};
+      $("#admin-password").value = "";
+      const response = await fetch("/v1/admin/session", {method: "POST", credentials: "same-origin", cache: "no-store", headers: {"Content-Type": "application/json"}, body: JSON.stringify(credentials)});
+      const data = await response.json();
+      if (!response.ok) throw new Error(response.status === 429 ? "Trop de tentatives. Réessayez dans quelques minutes." : "Identifiant ou mot de passe incorrect.");
+      await openWorkspace(data);
     });
   });
-  $("#logout").addEventListener("click", () => {if (leaveEditor()) logout();});
+  $("#logout").addEventListener("click", () => {if (leaveEditor()) logout().catch(errorMessage);});
   $("#search-form").addEventListener("submit", (event) => {event.preventDefault(); state.query = $("#search").value.trim(); state.offset = 0; busy(event.target.querySelector("button"), loadFoods);});
   $("#refresh-foods").addEventListener("click", (event) => busy(event.target, loadFoods));
   $("#previous").addEventListener("click", () => {state.offset = Math.max(0, state.offset - state.limit); loadFoods().catch(errorMessage);});
@@ -200,5 +213,7 @@
   }));
   $("#refresh-audit").addEventListener("click", (event) => busy(event.target, async () => renderAudit($("#audit-list"), await api("/audit"))));
   window.addEventListener("beforeunload", (event) => {if (state.dirty) {event.preventDefault(); event.returnValue = "";}});
-  window.addEventListener("pagehide", logout);
+  fetch("/v1/admin/session", {credentials: "same-origin", cache: "no-store"})
+    .then(async (response) => { if (response.ok) await openWorkspace(await response.json()); else showLogin(); })
+    .catch(() => showLogin());
 })();

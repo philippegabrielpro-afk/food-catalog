@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .auth import require_admin_key, require_api_key
+from .auth import require_admin_key, require_api_key, router as session_router
 from .admin import router as admin_router
 from .catalog import (
     create_food,
@@ -36,7 +36,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Food Catalog API",
-    version="0.2.1",
+    version="0.3.0",
     description=(
         "Generic food composition and search service. "
         "Do not send patient identifiers, meals, glucose data or medical context."
@@ -45,6 +45,7 @@ app = FastAPI(
 )
 
 app.include_router(admin_router)
+app.include_router(session_router)
 ADMIN_STATIC = FilePath(__file__).parent / "static" / "admin"
 app.mount("/admin/assets", StaticFiles(directory=ADMIN_STATIC), name="admin-assets")
 

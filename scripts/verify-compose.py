@@ -37,6 +37,9 @@ def main() -> None:
             f"POSTGRES_PASSWORD={password}\n"
             f"FOOD_CATALOG_API_KEY={uuid.uuid4().hex + uuid.uuid4().hex}\n"
             f"FOOD_CATALOG_ADMIN_API_KEY={uuid.uuid4().hex + uuid.uuid4().hex}\n"
+            "FOOD_CATALOG_ADMIN_USERNAME=ci-admin\n"
+            "FOOD_CATALOG_ADMIN_PASSWORD_HASH='pbkdf2_sha256$600000$Y2ktb25seS1maXhlZC1zYWx0$oOcW1qXXVSeUhPRKJKE9SKWTZNVhPVZ_NRaHEbcasnw'\n"
+            f"FOOD_CATALOG_SESSION_SECRET={uuid.uuid4().hex + uuid.uuid4().hex}\n"
             "FOOD_CATALOG_AUTO_IMPORT_CIQUAL=true\n",
             encoding="utf-8",
         )
@@ -80,7 +83,7 @@ def main() -> None:
             assert len(bindings) == 1, "CI must use exactly one dynamic loopback port"
             binding = bindings[0]
             assert int(binding["HostPort"]) > 0
-            for endpoint, expected in (("health", {"status": "ok", "version": "0.2.1"}),
+            for endpoint, expected in (("health", {"status": "ok", "version": "0.3.0"}),
                                        ("ready", {"status": "ready", "foods": 3484})):
                 with urlopen(f'http://127.0.0.1:{binding["HostPort"]}/{endpoint}', timeout=10) as response:
                     assert json.load(response) == expected
