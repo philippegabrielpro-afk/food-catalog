@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.auth import hash_password
 from app.schemas import FoodWrite
 
 
@@ -33,5 +34,8 @@ def test_production_rejects_placeholder_or_shared_keys():
         environment="production",
         api_key="a" * 32,
         admin_api_key="b" * 32,
+        admin_username="phil",
+        admin_password_hash=hash_password("correct horse battery staple"),
+        session_secret="c" * 32,
     )
     assert settings.environment == "production"

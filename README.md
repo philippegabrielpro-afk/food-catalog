@@ -1,6 +1,7 @@
 # Food Catalog API
 
-Version 0.2.1 includes the administration interface, corrected Docker networking and daily PostgreSQL backups.
+Version 0.3.0 adds a single-administrator login with a short-lived browser
+session. API keys remain available for application-to-application calls.
 
 Standalone generic food-reference service extracted from Diablotin. It provides
 food search, autocomplete metadata and versioned nutritional provenance.
@@ -18,7 +19,8 @@ Consumer endpoints require `X-API-Key`:
 - `GET /v1/references/{source}/{external_code}`
 - `GET /v1/references/{source}/{external_code}?source_version={version}`
 
-Administration endpoints require the distinct admin key:
+Administration endpoints accept either the distinct admin API key or an
+authenticated browser session:
 
 - `POST /v1/admin/foods`
 - `PUT /v1/admin/foods/{food_id}`
@@ -33,15 +35,18 @@ Administration endpoints require the distinct admin key:
 
 ## Administration interface
 
-Start the local API, then open `http://127.0.0.1:8080/admin`. Sign in using
-`FOOD_CATALOG_ADMIN_API_KEY` from your own `.env`; never share it. The consumer
-key cannot access administration. The admin key cannot access consumer routes.
-The interface keeps its key in JavaScript memory only, clears the login field,
-and loses authentication on page reload or logout. There are no authentication
-cookies, persistent browser storage or third-party frontend assets.
+Start the local API, then open `http://127.0.0.1:8080/admin`. Sign in with the
+configured `FOOD_CATALOG_ADMIN_USERNAME` and password. Only a PBKDF2-SHA256
+password hash is stored in `.env`; generate its complete, correctly quoted
+environment line with `python -m scripts.generate_admin_password`. The password is never stored by
+the browser. The server issues a signed, time-limited, `HttpOnly`, `SameSite`
+cookie and the browser keeps its CSRF token in memory only. A restart invalidates
+existing browser sessions. Logout revokes the current session in the running
+process. There is no browser local/session storage or third-party frontend asset.
 
-Use HTTPS outside loopback. The login interface blocks sending a key over
-non-local HTTP; this does not replace TLS configuration for direct API callers.
+Use HTTPS outside loopback. Production login rejects non-HTTPS or cross-origin
+requests and the cookie has the `Secure` flag. Five failed attempts per source
+and username within five minutes are rate-limited until the window expires.
 HTML/assets and admin responses have `no-store`, an explicit CSP, frame denial
 and MIME-sniffing protection.
 
@@ -60,8 +65,8 @@ error, without a persistent failed batch.
 Changes through admin write endpoints are recorded transactionally in
 `admin_audit`, including generic before/after snapshots. Automatic startup
 imports are visible in source history, not as human admin actions. The audit
-starts with this version (no invented backfill). It is a shared-key technical
-log, not a named-user or tamper-proof audit. Direct database changes are outside
+starts with this version (no invented backfill). It is a single-administrator
+technical log, not a multi-user or tamper-proof audit. Direct database changes are outside
 its scope. See [ADMIN_GUIDE.md](ADMIN_GUIDE.md) for the French local test guide.
 
 Before updating an existing database: stop the API, make a verified backup,

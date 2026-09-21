@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 import app.main as main_module
+import app.auth as auth_module
 from app.config import get_settings
 from app.database import Base, get_db
 from app.importer import ImportVersionConflict
@@ -37,6 +38,70 @@ def client():
         test_client.close()
         main_module.app.dependency_overrides.clear()
         engine.dispose()
+
+
+def test_browser_login_session_csrf_logout_and_tampering(client):
+    auth_module._login_failures.clear()
+    login = client.post("/v1/admin/session", json={
+        "username": "admin", "password": "dev-admin-password",
+    })
+    assert login.status_code == 200
+    session = login.json()
+    cookie = login.headers["set-cookie"]
+    assert "HttpOnly" in cookie and "SameSite=strict" in cookie
+    assert "dev-admin-password" not in cookie and get_settings().admin_api_key not in cookie
+
+    no_key = {"X-API-Key": ""}
+    assert client.get("/v1/admin/foods", headers=no_key).status_code == 200
+    assert client.post("/v1/admin/foods", headers=no_key, json={}).status_code == 403
+    csrf = {**no_key, "X-CSRF-Token": session["csrf_token"]}
+    created = client.post("/v1/admin/foods", headers=csrf, json={
+        "canonical_name": "Riz session", "external_code": "session-rice", "carbs_per_100g": 30,
+    })
+    assert created.status_code == 201
+    assert client.get("/v1/admin/session", headers=no_key).json()["username"] == "admin"
+
+    assert client.delete("/v1/admin/session", headers=csrf).status_code == 200
+    assert client.get("/v1/admin/foods", headers=no_key).status_code == 401
+
+    client.cookies.set(auth_module.COOKIE_NAME, "tampered.invalid")
+    assert client.get("/v1/admin/session", headers=no_key).status_code == 401
+
+
+def test_browser_login_rate_limit_and_generic_failure(client):
+    auth_module._login_failures.clear()
+    for _ in range(auth_module.LOGIN_ATTEMPTS):
+        response = client.post("/v1/admin/session", json={"username": "admin", "password": "wrong"})
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid username or password"
+    assert client.post(
+        "/v1/admin/session", json={"username": "admin", "password": "dev-admin-password"}
+    ).status_code == 429
+    auth_module._login_failures.clear()
+
+
+def test_production_login_requires_same_origin_https_and_secure_cookie(client):
+    auth_module._login_failures.clear()
+    settings = get_settings()
+    previous_environment = settings.environment
+    settings.environment = "production"
+    try:
+        blocked = client.post(
+            "/v1/admin/session",
+            headers={"Origin": "https://attacker.example", "Host": "food-catalog.klaimb.fr"},
+            json={"username": "admin", "password": "dev-admin-password"},
+        )
+        assert blocked.status_code == 403 and "set-cookie" not in blocked.headers
+        allowed = client.post(
+            "/v1/admin/session",
+            headers={"Origin": "https://food-catalog.klaimb.fr", "Host": "food-catalog.klaimb.fr"},
+            json={"username": "admin", "password": "dev-admin-password"},
+        )
+        assert allowed.status_code == 200
+        assert "Secure" in allowed.headers["set-cookie"]
+    finally:
+        settings.environment = previous_environment
+        auth_module._login_failures.clear()
 
 
 def create(client, name="Riz basmati cuit", code="rice", value=32.9):

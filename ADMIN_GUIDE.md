@@ -1,4 +1,4 @@
-# Food Catalog 0.2.0 — interface d’administration
+# Food Catalog 0.3.0 — interface d’administration
 
 Cet incrément concerne uniquement Food Catalog. Il ne modifie ni Diablotin,
 ni son déploiement, ni ses repas et corrections personnelles.
@@ -15,8 +15,9 @@ git diff --check
 git status --short
 ```
 
-Résultat attendu : 36 tests réussis. Les deux avertissements de dépendances
-de test déjà présents ne signalent pas un échec de l’interface.
+Résultat attendu sous Windows : 43 tests réussis et 18 tests shell ignorés.
+Sous Linux/CI : 61 tests réussis. Les deux avertissements de dépendances de test
+déjà présents ne signalent pas un échec de l’interface.
 
 Pour le premier essai visuel, utiliser une base dédiée plutôt que modifier
 la base locale existante. Arrêter au préalable le serveur local avec Ctrl+C.
@@ -30,9 +31,12 @@ $env:FOOD_CATALOG_AUTO_IMPORT_CIQUAL = "true"
 ```
 
 L’adresse est `http://127.0.0.1:8080/admin`. Le premier démarrage importe les
-3 484 aliments officiels dans cette base de test. Connexion avec la valeur
-`FOOD_CATALOG_ADMIN_API_KEY` de votre `.env`, pas la clé consommateur.
-Ne pas recopier cette clé dans une conversation, une capture ou un commit.
+3 484 aliments officiels dans cette base de test. Connexion avec
+`FOOD_CATALOG_ADMIN_USERNAME` et le mot de passe correspondant. Le `.env`
+contient uniquement son dérivé `FOOD_CATALOG_ADMIN_PASSWORD_HASH`. La commande
+`python -m scripts.generate_admin_password` produit la ligne complète et entre
+guillemets simples à copier dans `.env`. Ne recopier ni mot de passe, ni
+clé, ni dérivé dans une conversation, une capture ou un commit.
 La base de test est ignorée par la règle `*.db` existante.
 
 Ces variables ne s’appliquent qu’au terminal courant. Après les essais,
@@ -42,7 +46,8 @@ déploiement.
 
 ## Parcours d’acceptation
 
-1. Une mauvaise clé doit être refusée. La clé consommateur aussi.
+1. Un mauvais identifiant ou mot de passe doit être refusé. Après cinq échecs
+   rapprochés, la limitation des tentatives doit répondre temporairement 429.
 2. Le catalogue affiche 3 484 aliments. Les boutons paginent la liste.
 3. Chercher « riz basmati cuit » ; ouvrir la fiche de code Ciqual 9125.
    Vérifier 32,9 g/100 g, la version 2025-11-03 et le lien de provenance.
@@ -60,22 +65,21 @@ déploiement.
    et ne crée pas de doublons. L’historique expose version, date et SHA-256.
 10. Vérifier le journal global et celui de la fiche : actions et données avant /
     après, sans clé. Seules les actions depuis cette mise à jour sont présentes.
-11. Recharger la page : la connexion doit être perdue. Vérifier aussi la
-    déconnexion explicite, puis l’affichage sur un écran mobile.
+11. Recharger la page : la session doit rester active jusqu’à son expiration.
+    Vérifier la déconnexion explicite, puis l’affichage sur un écran mobile.
 12. Annuler les confirmations : aucune écriture ne doit être faite.
 
 Les tests Python couvrent l’API, la séparation des clés, l’intégrité des versions,
 les collisions, la migration, le journal transactionnel et le catalogue complet.
 La syntaxe JavaScript a été vérifiée avec Node. Un parcours supplémentaire en
-DOM simulé, relié à un véritable serveur HTTP local, a validé connexion,
-recherche, édition, ajout de version, retour à Ciqual, création, imports,
-journal, absence de stockage de la clé et déconnexion. Ce contrôle n’est pas
-une vérification du rendu : la validation visuelle dans un vrai navigateur
-reste à effectuer avant toute release.
+Le parcours navigateur doit encore être validé visuellement dans un vrai
+navigateur avant la release : connexion, rechargement de session, recherche,
+édition, ajout de version, retour à Ciqual, imports, journal et déconnexion.
 
 ## Limites assumées
 
-- Interface pilote à clé d’administration partagée : pas de comptes utilisateurs.
+- Compte administrateur unique configuré par environnement : pas encore de
+  gestion multi-utilisateurs, récupération de mot de passe ni MFA.
 - Journal applicatif non inviolable, sans identité individuelle et sans reprise
   de l’historique antérieur. Pas de suppression d’aliment dans cette interface.
 - Édition simultanée des libellés : la dernière écriture gagne ; pas de verrou
